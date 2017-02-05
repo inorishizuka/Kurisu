@@ -1,6 +1,8 @@
 import discord
+import json
 import re
 from discord.ext import commands
+from subprocess import call
 from sys import argv
 
 class Mod:
@@ -11,6 +13,26 @@ class Mod:
         self.bot = bot
         print('Addon "{}" loaded'.format(self.__class__.__name__))
 
+    async def add_restriction(self, member, rst):
+        with open("restrictions.json", "r") as f:
+            rsts = json.load(f)
+        if member.id not in rsts:
+            rsts[member.id] = []
+        if rst not in rsts[member.id]:
+            rsts[member.id].append(rst)
+        with open("restrictions.json", "w") as f:
+            json.dump(rsts, f)
+
+    async def remove_restriction(self, member, rst):
+        with open("restrictions.json", "r") as f:
+            rsts = json.load(f)
+        if member.id not in rsts:
+            rsts[member.id] = []
+        if rst in rsts[member.id]:
+            rsts[member.id].remove(rst)
+        with open("restrictions.json", "w") as f:
+            json.dump(rsts, f)
+
     @commands.has_permissions(administrator=True)
     @commands.command()
     async def quit(self, *gamename):
@@ -18,10 +40,19 @@ class Mod:
         await self.bot.say("👋 Bye bye!")
         await self.bot.close()
 
-    @commands.has_permissions(administrator=True)
+    @commands.has_permissions(manage_server=True)
+    @commands.command(hidden=True)
+    async def pull(self, *gamename):
+        """Pull new changes from GitHub and restart."""
+        await self.bot.say("Pulling changes...")
+        call(['git', 'pull'])
+        await self.bot.say("👋 Restarting bot!")
+        await self.bot.close()
+
+    @commands.has_permissions(manage_server=True)
     @commands.command(pass_context=True, hidden=True)
     async def userinfo(self, ctx, user):
-        """Gets user info. Owners only."""
+        """Gets user info. SuperOP+."""
         u = ctx.message.mentions[0]
         role = u.top_role.name
         if role == "@everyone":
@@ -32,10 +63,9 @@ class Mod:
     @commands.command(pass_context=True, hidden=True)
     async def matchuser(self, ctx, *, rgx: str):
         """Match users by regex."""
-        server = ctx.message.server
         author = ctx.message.author
         msg = "```\nmembers:\n"
-        for m in server.members:
+        for m in self.bot.server.members:
             if bool(re.search(rgx, m.name, re.IGNORECASE)):
                 msg += "{} - {}#{}\n".format(m.id, m.name, m.discriminator)
         msg += "```"
@@ -45,12 +75,14 @@ class Mod:
     @commands.command(pass_context=True, hidden=True)
     async def multiban(self, ctx, *, members: str):
         """Multi-ban users."""
-        server = ctx.message.server
         author = ctx.message.author
         msg = "```\nbanned:\n"
         for m in ctx.message.mentions:
             msg += "{} - {}#{}\n".format(m.id, m.name, m.discriminator)
-            await self.bot.ban(m, 7)
+            try:
+                await self.bot.ban(m)
+            except discord.error.NotFound:
+                pass
         msg += "```"
         await self.bot.send_message(author, msg)
 
@@ -58,65 +90,54 @@ class Mod:
     @commands.command(pass_context=True, hidden=True)
     async def multibanre(self, ctx, *, rgx: str):
         """Multi-ban users by regex."""
-        server = ctx.message.server
         author = ctx.message.author
         msg = "```\nbanned:\n"
         toban = []  # because "dictionary changed size during iteration"
-        for m in server.members:
+        for m in self.bot.server.members:
             if bool(re.search(rgx, m.name, re.IGNORECASE)):
                 msg += "{} - {}#{}\n".format(m.id, m.name, m.discriminator)
                 toban.append(m)
         for m in toban:
-            await self.bot.ban(m)
+            try:
+                await self.bot.ban(m)
+            except discord.error.NotFound:
+                pass
         msg += "```"
-        await print(self.bot.send_message(author, msg))
+        await self.bot.send_message(author, msg)
 
-    @commands.has_permissions(manage_messages=True)
+    @commands.has_permissions(manage_nicknames=True)
     @commands.command(pass_context=True, name="clear")
     async def purge(self, ctx, limit: int):
        """Clears a given number of messages. Staff only."""
        try:
            await self.bot.purge_from(ctx.message.channel, limit=limit)
-           msg = "🗑 **Cleared**: {0} cleared {1} messages in {2}".format(ctx.message.author.mention, limit, ctx.message.channel.mention)
-           await self.bot.send_message(discord.utils.get(ctx.message.server.channels, name="mod-logs"), msg)
+           msg = "🗑 **Cleared**: {} cleared {} messages in {}".format(ctx.message.author.mention, limit, ctx.message.channel.mention)
+           await self.bot.send_message(self.bot.modlogs_channel, msg)
        except discord.errors.Forbidden:
            await self.bot.say("💢 I don't have permission to do this.")
 
     @commands.has_permissions(manage_nicknames=True)
-    @commands.command(pass_context=True, name="kick")
-    async def kick_member(self, ctx, user, *, reason=""):
-        """Kicks a user from the server. Staff only."""
-        try:
-            member = ctx.message.mentions[0]
-            server = ctx.message.author.server
-            msg = "You were kicked from {0}.".format(server.name)
-            if reason != "":
-                # much \n
-                msg += " The given reason is: " + reason
-            msg += "\n\nYou are able to rejoin the server, but please read the rules in #welcome before participating again."
-            await self.bot.send_message(member, msg)
-            await self.bot.kick(member)
-            await self.bot.say("{0} is now gone. 👌".format(member))
-            msg = "👢 **Kick**: {0} kicked {1} | {2}#{3}".format(ctx.message.author.mention, member.mention, member.name, member.discriminator)
-            if reason != "":
-                # much \n
-                msg += "\n✏️ __Reason__: " + reason
-            await self.bot.send_message(discord.utils.get(server.channels, name="server-logs"), msg)
-            await self.bot.send_message(discord.utils.get(server.channels, name="mod-logs"), msg + ("\nPlease add an explanation below. In the future, it is recommended to use `.kick <user> [reason]`." if reason == "" else ""))
-        except discord.errors.Forbidden:
-            await self.bot.say("💢 I don't have permission to do this.")
-
-    @commands.has_permissions(manage_nicknames=True)
     @commands.command(pass_context=True, name="mute")
-    async def mute(self, ctx, user):
+    async def mute(self, ctx, user, *, reason=""):
         """Mutes a user so they can't speak. Staff only."""
         try:
             member = ctx.message.mentions[0]
-            server = ctx.message.author.server
-            await self.bot.add_roles(member, discord.utils.get(server.roles, name="Muted"))
-            await self.bot.say("{0} can no longer speak.".format(member.mention))
-            msg = "🔇 **Muted**: {0} muted {1} | {2}#{3}".format(ctx.message.author.mention, member.mention, member.name, member.discriminator)
-            await self.bot.send_message(discord.utils.get(server.channels, name="mod-logs"), msg)
+            await self.add_restriction(member, "Muted")
+            await self.bot.add_roles(member, self.bot.muted_role)
+            msg_user = "You were muted!"
+            if reason != "":
+                msg_user += " The given reason is: " + reason
+            try:
+                await self.bot.send_message(member, msg_user)
+            except discord.errors.Forbidden:
+                pass  # don't fail in case user has DMs disabled for this server, or blocked the bot
+            await self.bot.say("{} can no longer speak.".format(member.mention))
+            msg = "🔇 **Muted**: {} muted {} | {}#{}".format(ctx.message.author.mention, member.mention, self.bot.escape_name(member.name), self.bot.escape_name(member.discriminator))
+            if reason != "":
+                msg += "\n✏️ __Reason__: " + reason
+            else:
+                msg += "\nPlease add an explanation below. In the future, it is recommended to use `.mute <user> [reason]` as the reason is automatically sent to the user."
+            await self.bot.send_message(self.bot.modlogs_channel, msg)
         except discord.errors.Forbidden:
             await self.bot.say("💢 I don't have permission to do this.")
 
@@ -126,25 +147,36 @@ class Mod:
         """Unmutes a user so they can speak. Staff only."""
         try:
             member = ctx.message.mentions[0]
-            server = ctx.message.author.server
-            await self.bot.remove_roles(member, discord.utils.get(server.roles, name="Muted"))
-            await self.bot.say("{0} can now speak again.".format(member.mention))
-            msg = "🔈 **Unmuted**: {0} unmuted {1} | {2}#{3}".format(ctx.message.author.mention, member.mention, member.name, member.discriminator)
-            await self.bot.send_message(discord.utils.get(server.channels, name="mod-logs"), msg)
+            await self.remove_restriction(member, "Muted")
+            await self.bot.remove_roles(member, self.bot.muted_role)
+            await self.bot.say("{} can now speak again.".format(member.mention))
+            msg = "🔈 **Unmuted**: {} unmuted {} | {}#{}".format(ctx.message.author.mention, member.mention, self.bot.escape_name(member.name), self.bot.escape_name(member.discriminator))
+            await self.bot.send_message(self.bot.modlogs_channel, msg)
         except discord.errors.Forbidden:
             await self.bot.say("💢 I don't have permission to do this.")
 
     @commands.has_permissions(manage_nicknames=True)
     @commands.command(pass_context=True, name="noembed")
-    async def noembed(self, ctx, user):
+    async def noembed(self, ctx, user, *, reason=""):
         """Removes embed permissions from a user. Staff only."""
         try:
             member = ctx.message.mentions[0]
-            server = ctx.message.author.server
-            await self.bot.add_roles(member, discord.utils.get(server.roles, name="No-Embed"))
-            await self.bot.say("{0} can no longer embed links or attach files.".format(member.mention))
-            msg = "🚫 **Removed Embed**: {0} removed embed from {1} | {2}#{3}".format(ctx.message.author.mention, member.mention, member.name, member.discriminator)
-            await self.bot.send_message(discord.utils.get(server.channels, name="mod-logs"), msg)
+            await self.add_restriction(member, "No-Embed")
+            await self.bot.add_roles(member, self.bot.noembed_role)
+            msg_user = "You lost embed and upload permissions!"
+            if reason != "":
+                msg_user += " The given reason is: " + reason
+            try:
+                await self.bot.send_message(member, msg_user)
+            except discord.errors.Forbidden:
+                pass  # don't fail in case user has DMs disabled for this server, or blocked the bot
+            await self.bot.say("{} can no longer embed links or attach files.".format(member.mention))
+            msg = "🚫 **Removed Embed**: {} removed embed from {} | {}#{}".format(ctx.message.author.mention, member.mention, self.bot.escape_name(member.name), self.bot.escape_name(member.discriminator))
+            if reason != "":
+                msg += "\n✏️ __Reason__: " + reason
+            else:
+                msg += "\nPlease add an explanation below. In the future, it is recommended to use `.noembed <user> [reason]` as the reason is automatically sent to the user."
+            await self.bot.send_message(self.bot.modlogs_channel, msg)
         except discord.errors.Forbidden:
             await self.bot.say("💢 I don't have permission to do this.")
 
@@ -154,53 +186,99 @@ class Mod:
         """Restore embed permissios for a user. Staff only."""
         try:
             member = ctx.message.mentions[0]
-            server = ctx.message.author.server
-            await self.bot.remove_roles(member, discord.utils.get(server.roles, name="No-Embed"))
-            await self.bot.say("{0} can now embed links and attach files again.".format(member.mention))
-            msg = "⭕️ **Restored Embed**: {0} restored embed to {1} | {2}#{3}".format(ctx.message.author.mention, member.mention, member.name, member.discriminator)
-            await self.bot.send_message(discord.utils.get(server.channels, name="mod-logs"), msg)
+            await self.remove_restriction(member, "No-Embed")
+            await self.bot.remove_roles(member, self.bot.noembed_role)
+            await self.bot.say("{} can now embed links and attach files again.".format(member.mention))
+            msg = "⭕️ **Restored Embed**: {} restored embed to {} | {}#{}".format(ctx.message.author.mention, member.mention, self.bot.escape_name(member.name), self.bot.escape_name(member.discriminator))
+            await self.bot.send_message(self.bot.modlogs_channel, msg)
         except discord.errors.Forbidden:
             await self.bot.say("💢 I don't have permission to do this.")
 
     @commands.command(pass_context=True, name="takehelp")
-    async def takehelp(self, ctx, user):
+    async def takehelp(self, ctx, user, *, reason=""):
         """Remove access to help-and-questions. Staff and Helpers only."""
-        helpers_role = discord.utils.get(ctx.message.server.roles, name="Helpers")
-        staff_role = discord.utils.get(ctx.message.server.roles, name="Staff")
         author = ctx.message.author
-        if (helpers_role not in author.roles) and (staff_role not in author.roles):
-            msg = "{0} You cannot used this command.".format(author.mention)
+        if (self.bot.helpers_role not in author.roles) and (self.bot.staff_role not in author.roles):
+            msg = "{} You cannot used this command.".format(author.mention)
             await self.bot.say(msg)
             return
         try:
             member = ctx.message.mentions[0]
-            server = ctx.message.author.server
-            await self.bot.add_roles(member, discord.utils.get(server.roles, name="No Help"))
-            await self.bot.say("{0} can no longer give or get help.".format(member.mention))
-            msg = "🚫 **Help access removed**: {0} removed access to h&q from {1} | {2}#{3}".format(ctx.message.author.mention, member.mention, member.name, member.discriminator)
-            await self.bot.send_message(discord.utils.get(server.channels, name="mod-logs"), msg)
-            await self.bot.send_message(discord.utils.get(server.channels, name="helpers"), msg)
+            await self.add_restriction(member, "No-Help")
+            await self.bot.add_roles(member, self.bot.nohelp_role)
+            msg_user = "You lost access to help channels!"
+            if reason != "":
+                msg_user += " The given reason is: " + reason
+            try:
+                await self.bot.send_message(member, msg_user)
+            except discord.errors.Forbidden:
+                pass  # don't fail in case user has DMs disabled for this server, or blocked the bot
+            await self.bot.say("{} can no longer access the help channels.".format(member.mention))
+            msg = "🚫 **Help access removed**: {} removed access to help channels from {} | {}#{}".format(ctx.message.author.mention, member.mention, self.bot.escape_name(member.name), self.bot.escape_name(member.discriminator))
+            if reason != "":
+                msg += "\n✏️ __Reason__: " + reason
+            else:
+                msg += "\nPlease add an explanation below. In the future, it is recommended to use `.takehelp <user> [reason]` as the reason is automatically sent to the user."
+            await self.bot.send_message(self.bot.modlogs_channel, msg)
+            await self.bot.send_message(self.bot.helpers_channel, msg)
         except discord.errors.Forbidden:
             await self.bot.say("💢 I don't have permission to do this.")
 
     @commands.command(pass_context=True, name="givehelp")
-    async def give(self, ctx, user):
+    async def givehelp(self, ctx, user):
         """Restore access to help-and-questions. Staff and Helpers only."""
-        helpers_role = discord.utils.get(ctx.message.server.roles, name="Helpers")
-        staff_role = discord.utils.get(ctx.message.server.roles, name="Staff")
         author = ctx.message.author
-        if (helpers_role not in author.roles) and (staff_role not in author.roles):
-            msg = "{0} You cannot used this command.".format(author.mention)
+        if (self.bot.helpers_role not in author.roles) and (self.bot.staff_role not in author.roles):
+            msg = "{} You cannot used this command.".format(author.mention)
             await self.bot.say(msg)
             return
         try:
             member = ctx.message.mentions[0]
-            server = ctx.message.author.server
-            await self.bot.remove_roles(member, discord.utils.get(server.roles, name="No Help"))
-            await self.bot.say("{0} can give or get help again.".format(member.mention))
-            msg = "⭕️ **Help access restored**: {0} restored access to h&q from {1} | {2}#{3}".format(ctx.message.author.mention, member.mention, member.name, member.discriminator)
-            await self.bot.send_message(discord.utils.get(server.channels, name="mod-logs"), msg)
-            await self.bot.send_message(discord.utils.get(server.channels, name="helpers"), msg)
+            await self.remove_restriction(member, "No-Help")
+            await self.bot.remove_roles(member, self.bot.nohelp_role)
+            await self.bot.say("{} can access the help channels again.".format(member.mention))
+            msg = "⭕️ **Help access restored**: {} restored access to help channels to {} | {}#{}".format(ctx.message.author.mention, member.mention, self.bot.escape_name(member.name), self.bot.escape_name(member.discriminator))
+            await self.bot.send_message(self.bot.modlogs_channel, msg)
+            await self.bot.send_message(self.bot.helpers_channel, msg)
+        except discord.errors.Forbidden:
+            await self.bot.say("💢 I don't have permission to do this.")
+
+    @commands.has_permissions(manage_nicknames=True)
+    @commands.command(pass_context=True, name="probate")
+    async def probate(self, ctx, user, *, reason=""):
+        """Probate a user. Staff only."""
+        try:
+            member = ctx.message.mentions[0]
+            await self.add_restriction(member, "Probation")
+            await self.bot.add_roles(member, self.bot.probation_role)
+            msg_user = "You are under probation!"
+            if reason != "":
+                msg_user += " The given reason is: " + reason
+            try:
+                await self.bot.send_message(member, msg_user)
+            except discord.errors.Forbidden:
+                pass  # don't fail in case user has DMs disabled for this server, or blocked the bot
+            await self.bot.say("{} is now in probation.".format(member.mention))
+            msg = "🚫 **Probated**: {} probated {} | {}#{}".format(ctx.message.author.mention, member.mention, self.bot.escape_name(member.name), self.bot.escape_name(member.discriminator))
+            if reason != "":
+                msg += "\n✏️ __Reason__: " + reason
+            else:
+                msg += "\nPlease add an explanation below. In the future, it is recommended to use `.probate <user> [reason]` as the reason is automatically sent to the user."
+            await self.bot.send_message(self.bot.modlogs_channel, msg)
+        except discord.errors.Forbidden:
+            await self.bot.say("💢 I don't have permission to do this.")
+
+    @commands.has_permissions(manage_nicknames=True)
+    @commands.command(pass_context=True, name="unprobate")
+    async def unprobate(self, ctx, user):
+        """Unprobate a user. Staff only."""
+        try:
+            member = ctx.message.mentions[0]
+            await self.remove_restriction(member, "Probation")
+            await self.bot.remove_roles(member, self.bot.probation_role)
+            await self.bot.say("{} is out of probation.".format(member.mention))
+            msg = "⭕️ **Un-probated**: {} un-probated {} | {}#{}".format(ctx.message.author.mention, member.mention, self.bot.escape_name(member.name), self.bot.escape_name(member.discriminator))
+            await self.bot.send_message(self.bot.modlogs_channel, msg)
         except discord.errors.Forbidden:
             await self.bot.say("💢 I don't have permission to do this.")
 
@@ -209,7 +287,25 @@ class Mod:
     async def playing(self, ctx, *gamename):
         """Sets playing message. Staff only."""
         try:
-            await self.bot.change_status(game=discord.Game(name='{0}'.format(" ".join(gamename))))
+            await self.bot.change_presence(game=discord.Game(name='{}'.format(" ".join(gamename))))
+        except discord.errors.Forbidden:
+            await self.bot.say("💢 I don't have permission to do this.")
+
+    @commands.has_permissions(ban_members=True)
+    @commands.command(pass_context=True)
+    async def status(self, ctx, status):
+        """Sets status. Staff only."""
+        try:
+            if status == "online":
+                await self.bot.change_presence(status=discord.Status.online)
+            elif status == "offline":
+                await self.bot.change_presence(status=discord.Status.offline)
+            elif status == "idle":
+                await self.bot.change_presence(status=discord.Status.idle)
+            elif status == "dnd":
+                await self.bot.change_presence(status=discord.Status.dnd)
+            elif status == "invisible":
+                await self.bot.change_presence(status=discord.Status.invisible)
         except discord.errors.Forbidden:
             await self.bot.say("💢 I don't have permission to do this.")
 
@@ -218,7 +314,7 @@ class Mod:
     async def username(self, ctx, *, username):
         """Sets bot name. Staff only."""
         try:
-            await self.bot.edit_profile(username=('{0}'.format(username)))
+            await self.bot.edit_profile(username=('{}'.format(username)))
         except discord.errors.Forbidden:
             await self.bot.say("💢 I don't have permission to do this.")
 

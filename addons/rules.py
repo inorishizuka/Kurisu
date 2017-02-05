@@ -1,4 +1,3 @@
-#Importing libraries
 import discord
 from discord.ext import commands
 from sys import argv
@@ -12,9 +11,9 @@ class Rules:
         print('Addon "{}" loaded'.format(self.__class__.__name__))
 
     @commands.command()
-    async def unban(self):
+    async def consoleban(self):
         """States some stuff about no assistance with bans"""
-        await self.bot.say("Please refrain from asking for or giving assistance with unbanning consoles which have been banned from online services.\nReminder: sharing files that allow other users to evade Nintendo issued bans is a bannable offense. Please refrain from this behavior.")
+        await self.bot.say("Please refrain from asking for or giving assistance with unbanning consoles which have been banned from online services.\nReminder: sharing files that allow other users to evade Nintendo issued bans is a bannable offense.")
 
     @commands.command()
     async def pirate(self):
@@ -28,8 +27,8 @@ class Rules:
 
     @commands.command()
     async def rules(self):
-       """Displays rule command list."""
-       await self.bot.say("``` .r1\n.r2\n.r3\n.r4\n.r5\n.r6\n.r7\n.r8\n.r9\n.r10\n.r11\n.r12\n.r13\n.r14\n.nick```")
+       """Links to 3dshacks.ml."""
+       await self.bot.say("Please check {} or <http://3dshacks.ml> for a full list of rules".format(self.bot.welcome_channel.mention))
 
     @commands.command(hidden=True)
     async def r1(self):
@@ -84,7 +83,7 @@ class Rules:
     @commands.command(hidden=True)
     async def r11(self):
        """Quotes rule 11."""
-       await self.bot.say("```11. Illegitimate copies and other copyright violations will not be tolerated. This includes:\n- Sharing full game data, such as .3DS/CCI or CIA files, Sharing 'ticket' files, Sharing titlekeys, linking to any site with the purpose of hosting or providing the former (general encryption keys not associated with piracy are not affected by this).\n- All discussion of piracy is strictly forbidden in help channels. This includes but is not limited to: asking for and giving assistance with piracy, admission of piracy, etc.```")
+       await self.bot.say("```Illegitimate copies and other copyright violations will not be tolerated. This includes:\n- Sharing full game data, such as .3DS/CCI or CIA files, Sharing 'ticket' files, Sharing titlekeys, linking to any site with the purpose of hosting or providing the former (general encryption keys not associated with piracy are not affected by this).\n- Sharing software designed for copyright violations or sharing copyrighted material is not allowed.\n- Discussing the aforementioned software is allowed.\n- Naming software used to obtain copyrighted material illegitimately is strictly prohibited.\n- Attempting to bypass these rules via any method on this server is strictly prohibited.\n- No piracy discussion in help channels at all. No exceptions.```")
 
     @commands.command(hidden=True)
     async def r12(self):
@@ -100,6 +99,11 @@ class Rules:
     async def r14(self):
        """Displays rule 14."""
        await self.bot.say("```14. Links to other Discord servers are allowed, on the following conditions:\n- You must receive written consent from a staff member.\n- The linked server must not directly violate any of this server's rules.\n- You may not spam advertisement to the server, post the link once and be done.```")
+
+    @commands.command(hidden=True)
+    async def r15(self):
+       """Displays rule 15."""
+       await self.bot.say("```15. Keep Voice/Music commands to #voice-and-music and #bot-cmds.  Do not use them in other channels. Keep music and voice discussion to #voice-and-music. Failure to abide by these rules could result in you having voice channel permissions revoked.```")
 
 def setup(bot):
     bot.add_cog(Rules(bot))
